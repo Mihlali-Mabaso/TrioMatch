@@ -210,12 +210,19 @@ export async function addStudent(data: {
     return newStudent;
 }
 
-// GET matches
-export async function getMatches(): Promise<Match[]> {
+// GET matches with full student details
+export async function getMatches() {
     await delay(200);
     const { data, error } = await supabase
         .from('matches')
-        .select('*')
+        .select(`
+            id,
+            matched_at,
+            notified,
+            student1:students!student_1_id(id, full_name, year_level, whatsapp_number, faculty),
+            student2:students!student_2_id(id, full_name, year_level, whatsapp_number, faculty),
+            student3:students!student_3_id(id, full_name, year_level, whatsapp_number, faculty)
+        `)
         .order('matched_at', { ascending: false });
 
     if (error) {
@@ -223,6 +230,25 @@ export async function getMatches(): Promise<Match[]> {
         throw error;
     }
 
-    console.log('Fetched matches:', data);
+    console.log('Fetched matches with students:', data);
     return data || [];
 }
+
+// Run matching algorithm via Supabase RPC (server-side with elevated permissions)
+export async function runMatchingAlgorithm(): Promise<{ teams_formed: number; message: string }> {
+    console.log("Running matching algorithm via RPC...");
+
+    const { data, error } = await supabase.rpc('match_students');
+
+    if (error) {
+        console.error("RPC match_students error:", error);
+        throw new Error(error.message || "Failed to run matching algorithm");
+    }
+
+    console.log("Matching result:", data);
+    return {
+        teams_formed: data?.teams_formed ?? 0,
+        message: data?.message ?? "No result returned",
+    };
+}
+

@@ -93,16 +93,12 @@ function PoolCard({ entry }: { entry: any }) {
         "1st Year": "border-t-primary",
         "2nd Year": "border-t-electric",
         "3rd Year": "border-t-flame",
-        "4th Year": "border-t-success",
-        "Postgrad": "border-t-muted-foreground",
     };
 
     const yearBgMap: Record<string, string> = {
         "1st Year": "bg-primary/15 text-primary",
         "2nd Year": "bg-electric/15 text-electric",
         "3rd Year": "bg-flame/15 text-flame",
-        "4th Year": "bg-success/15 text-success",
-        "Postgrad": "bg-muted text-muted-foreground",
     };
 
     const topColor = yearColorMap[entry.student.year_level] || "border-t-border";

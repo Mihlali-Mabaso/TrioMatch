@@ -29,7 +29,7 @@ const Navbar = () => {
                             Billboard
                         </button>
                         <button onClick={() => scrollTo("lotto")} className="font-body text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
-                            Daily Lotto
+                            Match Timer
                         </button>
                         <button onClick={() => scrollTo("pool")} className="font-body text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
                             Waiting Pool
@@ -63,7 +63,7 @@ const Navbar = () => {
                         Billboard
                     </button>
                     <button onClick={() => scrollTo("lotto")} className="block w-full text-left font-body text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-primary py-2">
-                        Daily Lotto
+                        Match Timer
                     </button>
                     <button onClick={() => scrollTo("pool")} className="block w-full text-left font-body text-sm font-semibold uppercase tracking-wider text-muted-foreground hover:text-primary py-2">
                         Waiting Pool

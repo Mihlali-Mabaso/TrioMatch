@@ -53,12 +53,31 @@ const BillboardSection = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {matchesData.map((match: any, idx: number) => (
                                     <div key={match.id} className="bg-card border border-border p-6">
-                                        <h4 className="font-heading text-lg font-bold uppercase mb-4">Team #{idx + 1}</h4>
-                                        <div className="space-y-2 text-sm text-muted-foreground">
-                                            <div>Student 1: {match.student_1_id}</div>
-                                            <div>Student 2: {match.student_2_id}</div>
-                                            <div>Student 3: {match.student_3_id}</div>
-                                            <div className="text-xs mt-2">Matched: {new Date(match.matched_at).toLocaleDateString()}</div>
+                                        <h4 className="font-heading text-lg font-bold uppercase mb-4 flex items-center justify-between">
+                                            <span>Team #{idx + 1}</span>
+                                            <span className="font-body text-xs font-normal text-muted-foreground">
+                                                {new Date(match.matched_at).toLocaleDateString()}
+                                            </span>
+                                        </h4>
+                                        <div className="space-y-3">
+                                            {[match.student1, match.student2, match.student3].map((student: any, sIdx: number) => (
+                                                student && (
+                                                    <div key={sIdx} className="bg-background/50 border border-border/50 p-3">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="font-heading text-sm font-bold text-foreground">
+                                                                {student.full_name}
+                                                            </span>
+                                                            <span className="font-body text-xs font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5">
+                                                                {student.year_level}
+                                                            </span>
+                                                        </div>
+                                                        <div className="font-body text-xs text-muted-foreground space-y-0.5">
+                                                            <div>📚 {student.faculty}</div>
+                                                            <div>📱 {student.whatsapp_number}</div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            ))}
                                         </div>
                                     </div>
                                 ))}

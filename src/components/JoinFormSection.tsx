@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
-const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year", "Postgrad"];
+const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year"];
 
 const JoinFormSection = () => {
     const [formData, setFormData] = useState({

@@ -1,197 +1,184 @@
-import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Timer } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Timer, Sparkles, CheckCircle, AlertTriangle } from "lucide-react";
+import { runMatchingAlgorithm } from "@/services/dataService";
+import { useQueryClient } from "@tanstack/react-query";
 
-const LOTTO_KEY = "triomatch_lotto";
-const YEAR_LEVELS = ["1ST YEAR", "2ND YEAR", "3RD YEAR"];
+const MATCH_RAN_KEY = "triomatch_match_ran";
 
-interface LottoState {
-    date: string;
-    selectedBox: number | null;
-    result: string | null;
-}
-
-function get12HourPeriodKey(): string {
+function get10MinPeriodKey(): string {
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0];
-    const period = now.getHours() < 12 ? "AM" : "PM";
-    return `${dateStr}-${period}`;
+    const hourStr = now.getHours().toString().padStart(2, "0");
+    const period = Math.floor(now.getMinutes() / 10);
+    return `${dateStr}-${hourStr}-${period}`;
 }
 
-function getLottoState(): LottoState | null {
-    const raw = localStorage.getItem(LOTTO_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as LottoState;
-    if (parsed.date !== get12HourPeriodKey()) return null;
-    return parsed;
-}
-
-function saveLottoState(state: LottoState) {
-    localStorage.setItem(LOTTO_KEY, JSON.stringify(state));
-}
-
-function getTimeUntilNext12Hours(): { hours: number; minutes: number; seconds: number } {
+function getTimeUntilNext10Minutes(): { minutes: number; seconds: number } {
     const now = new Date();
-    const next12 = new Date(now);
-    const currentHour = now.getHours();
+    const next10 = new Date(now);
+    const currentMinutes = now.getMinutes();
+    const nextMinuteMark = Math.floor(currentMinutes / 10) * 10 + 10;
 
-    // Set to next 12-hour mark (either 12:00 or 00:00)
-    if (currentHour < 12) {
-        next12.setHours(12, 0, 0, 0);
+    if (nextMinuteMark >= 60) {
+        next10.setHours(now.getHours() + 1, 0, 0, 0);
     } else {
-        next12.setHours(24, 0, 0, 0);
+        next10.setSeconds(0, 0);
+        next10.setMinutes(nextMinuteMark);
     }
 
-    const diff = next12.getTime() - now.getTime();
+    const diff = next10.getTime() - now.getTime();
     return {
-        hours: Math.floor(diff / 3600000),
         minutes: Math.floor((diff % 3600000) / 60000),
         seconds: Math.floor((diff % 60000) / 1000),
     };
 }
 
-const DailyLottoSection = () => {
-    const [selectedBox, setSelectedBox] = useState<number | null>(null);
-    const [result, setResult] = useState<string | null>(null);
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [countdown, setCountdown] = useState(getTimeUntilNext12Hours());
-    const [hasPlayedToday, setHasPlayedToday] = useState(false);
+const MatchingSection = () => {
+    const [countdown, setCountdown] = useState(getTimeUntilNext10Minutes());
+    const [isMatching, setIsMatching] = useState(false);
+    const [matchResult, setMatchResult] = useState<{ type: "success" | "info" | "error"; message: string } | null>(null);
+    const queryClient = useQueryClient();
+    const lastPeriodRef = useRef(get10MinPeriodKey());
 
-    useEffect(() => {
-        const saved = getLottoState();
-        if (saved && saved.selectedBox !== null) {
-            setSelectedBox(saved.selectedBox);
-            setResult(saved.result);
-            setHasPlayedToday(true);
+    const invalidateAll = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+        queryClient.invalidateQueries({ queryKey: ["matches"] });
+        queryClient.invalidateQueries({ queryKey: ["waitingPool"] });
+        queryClient.invalidateQueries({ queryKey: ["billboard"] });
+    }, [queryClient]);
+
+    const doMatch = useCallback(async (source: string) => {
+        if (isMatching) return;
+        setIsMatching(true);
+        setMatchResult(null);
+        console.log(`[${source}] Running matching algorithm...`);
+
+        try {
+            const result = await runMatchingAlgorithm();
+            console.log(`[${source}] Matching result:`, result);
+
+            if (result && result.teams_formed > 0) {
+                setMatchResult({ type: "success", message: `${result.teams_formed} team(s) matched successfully!` });
+            } else {
+                setMatchResult({ type: "info", message: result?.message || "No teams could be formed — need at least 1 student per year level." });
+            }
+        } catch (err: any) {
+            console.error(`[${source}] Matching failed:`, err);
+            setMatchResult({ type: "error", message: err?.message || "Matching failed. Check console for details." });
         }
-    }, []);
 
+        invalidateAll();
+        setIsMatching(false);
+    }, [isMatching, invalidateAll]);
+
+    // Auto-match when 10-min period changes
     useEffect(() => {
         const interval = setInterval(() => {
-            setCountdown(getTimeUntilNext12Hours());
-            // Check if 12-hour period has changed
-            const saved = getLottoState();
-            if (!saved && hasPlayedToday) {
-                setHasPlayedToday(false);
-                setSelectedBox(null);
-                setResult(null);
+            setCountdown(getTimeUntilNext10Minutes());
+
+            const currentPeriod = get10MinPeriodKey();
+            if (currentPeriod !== lastPeriodRef.current) {
+                lastPeriodRef.current = currentPeriod;
+
+                const alreadyRan = localStorage.getItem(MATCH_RAN_KEY);
+                if (alreadyRan !== currentPeriod) {
+                    localStorage.setItem(MATCH_RAN_KEY, currentPeriod);
+                    doMatch("auto-timer");
+                }
             }
         }, 1000);
         return () => clearInterval(interval);
-    }, [hasPlayedToday]);
-
-    const handleSpin = useCallback((boxIndex: number) => {
-        if (hasPlayedToday || isSpinning) return;
-
-        setIsSpinning(true);
-        setSelectedBox(boxIndex);
-
-        // Random result
-        const randomResult = YEAR_LEVELS[Math.floor(Math.random() * YEAR_LEVELS.length)];
-
-        setTimeout(() => {
-            setResult(randomResult);
-            setIsSpinning(false);
-            setHasPlayedToday(true);
-            saveLottoState({
-                date: get12HourPeriodKey(),
-                selectedBox: boxIndex,
-                result: randomResult,
-            });
-            console.log("Lotto result:", randomResult);
-        }, 1500);
-    }, [hasPlayedToday, isSpinning]);
+    }, [doMatch]);
 
     const pad = (n: number) => n.toString().padStart(2, "0");
 
     return (
         <section id="lotto" className="relative py-20 sm:py-28 bg-primary overflow-hidden">
-            {/* Dot pattern */}
             <div className="absolute inset-0 dot-pattern" />
 
             <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 {/* Header */}
                 <div className="text-center mb-12">
                     <div className="inline-flex items-center gap-2 mb-4">
-                        <Sparkles className="w-5 h-5 text-primary-foreground" />
+                        <Timer className="w-5 h-5 text-primary-foreground" />
                         <span className="font-heading text-sm font-bold uppercase tracking-widest text-primary-foreground/70">
-                            Fun & Games
+                            Auto Matching
                         </span>
-                        <Sparkles className="w-5 h-5 text-primary-foreground" />
+                        <Timer className="w-5 h-5 text-primary-foreground" />
                     </div>
                     <h2 className="font-heading text-3xl sm:text-4xl md:text-5xl font-black uppercase italic text-primary-foreground">
-                        Daily Lotto Spin
+                        Match <span className="text-foreground">Timer</span>
                     </h2>
                     <p className="font-body text-primary-foreground/70 mt-3 max-w-md mx-auto">
-                        Pick a box and reveal the year level you win! One spin per day.
+                        Students are automatically matched into trios every 10 minutes. You can also trigger matching manually.
                     </p>
                 </div>
 
-                {/* Lotto Boxes */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto mb-12">
-                    {YEAR_LEVELS.map((year, idx) => {
-                        const isSelected = selectedBox === idx;
-                        const isRevealed = isSelected && result !== null;
-                        const isOtherSelected = selectedBox !== null && !isSelected;
-
-                        return (
-                            <button
-                                key={year}
-                                onClick={() => handleSpin(idx)}
-                                disabled={hasPlayedToday || isSpinning}
-                                className={`
-                  relative aspect-square flex flex-col items-center justify-center gap-3
-                  border-2 transition-all duration-300
-                  ${isSelected && isSpinning ? "animate-spin-reveal border-primary-foreground bg-primary-foreground/10" : ""}
-                  ${isRevealed ? "border-primary-foreground bg-primary-foreground/20 scale-105" : ""}
-                  ${isOtherSelected ? "opacity-40 border-primary-foreground/30 bg-primary-foreground/5" : ""}
-                  ${!hasPlayedToday && !isSpinning ? "border-primary-foreground/50 bg-primary-foreground/5 hover:border-primary-foreground hover:bg-primary-foreground/15 hover:scale-105 cursor-pointer" : ""}
-                  ${hasPlayedToday && !isSelected ? "border-primary-foreground/20 bg-primary-foreground/5 cursor-default" : ""}
-                `}
-                            >
-                                <span className="font-heading text-xs font-bold uppercase tracking-widest text-primary-foreground/60">
-                                    {year}
-                                </span>
-                                <span className={`font-heading text-4xl sm:text-5xl font-black text-primary-foreground ${isRevealed ? "" : ""}`}>
-                                    {isRevealed ? "🎉" : isSelected && isSpinning ? "..." : "???"}
-                                </span>
-                                {isRevealed && (
-                                    <span className="font-heading text-sm font-bold uppercase text-primary-foreground">
-                                        {result}
-                                    </span>
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* Result / Countdown */}
-                <div className="text-center">
-                    {hasPlayedToday && result && (
-                        <div className="mb-6 animate-slide-up">
-                            <p className="font-heading text-xl sm:text-2xl font-black uppercase text-primary-foreground">
-                                You got: <span className="underline decoration-4 underline-offset-4">{result}</span>!
-                            </p>
-                            <p className="font-body text-sm text-primary-foreground/60 mt-2">Come back tomorrow for another spin</p>
+                {/* Countdown display */}
+                <div className="flex flex-col items-center gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-center bg-primary-foreground/10 border border-primary-foreground/20 px-8 py-6">
+                            <span className="font-heading text-5xl sm:text-6xl font-black text-primary-foreground">
+                                {pad(countdown.minutes)}
+                            </span>
+                            <span className="font-body text-xs uppercase tracking-widest text-primary-foreground/60 mt-1">Minutes</span>
                         </div>
-                    )}
-
-                    <div className="inline-flex items-center gap-3 px-6 py-3 bg-primary-foreground/10 border border-primary-foreground/20">
-                        <Timer className="w-5 h-5 text-primary-foreground/70" />
-                        <span className="font-body text-sm font-semibold uppercase tracking-wider text-primary-foreground/70">
-                            Next spin in (12h cycle)
-                        </span>
-                        <div className="flex items-center gap-1 font-heading text-lg font-black text-primary-foreground animate-countdown">
-                            <span>{pad(countdown.hours)}</span>
-                            <span className="text-primary-foreground/50">:</span>
-                            <span>{pad(countdown.minutes)}</span>
-                            <span className="text-primary-foreground/50">:</span>
-                            <span>{pad(countdown.seconds)}</span>
+                        <span className="font-heading text-4xl font-black text-primary-foreground/50">:</span>
+                        <div className="flex flex-col items-center bg-primary-foreground/10 border border-primary-foreground/20 px-8 py-6">
+                            <span className="font-heading text-5xl sm:text-6xl font-black text-primary-foreground">
+                                {pad(countdown.seconds)}
+                            </span>
+                            <span className="font-body text-xs uppercase tracking-widest text-primary-foreground/60 mt-1">Seconds</span>
                         </div>
                     </div>
+
+                    <p className="font-body text-sm text-primary-foreground/50 uppercase tracking-wider">
+                        Until next automatic matching cycle
+                    </p>
+
+                    {/* Match Now button */}
+                    <button
+                        onClick={() => doMatch("manual")}
+                        disabled={isMatching}
+                        className="inline-flex items-center gap-2 px-8 py-4 bg-flame hover:bg-flame/90 text-flame-foreground font-heading text-sm font-black uppercase tracking-wider transition-all disabled:opacity-60 mt-2"
+                    >
+                        {isMatching ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-flame-foreground border-t-transparent rounded-full animate-spin" />
+                                Matching Students...
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles className="w-5 h-5" />
+                                Match Now
+                            </>
+                        )}
+                    </button>
+
+                    {/* Result feedback */}
+                    {matchResult && (
+                        <div className={`mt-4 inline-flex items-center gap-3 px-6 py-3 border animate-slide-up ${matchResult.type === "success"
+                                ? "bg-success/20 border-success/40 text-success"
+                                : matchResult.type === "error"
+                                    ? "bg-destructive/20 border-destructive/40 text-destructive"
+                                    : "bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground"
+                            }`}>
+                            {matchResult.type === "success" ? (
+                                <CheckCircle className="w-5 h-5" />
+                            ) : matchResult.type === "error" ? (
+                                <AlertTriangle className="w-5 h-5" />
+                            ) : (
+                                <Timer className="w-5 h-5" />
+                            )}
+                            <span className="font-heading text-sm font-bold uppercase">
+                                {matchResult.message}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
         </section>
     );
 };
 
-export default DailyLottoSection;
+export default MatchingSection;
